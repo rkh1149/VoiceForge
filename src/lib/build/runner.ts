@@ -70,12 +70,13 @@ export async function runStep(
       // Deliberately no NODE_ENV: setting it to "development" makes
       // `next build` fail with a misleading prerender/<Html> error, and
       // npm installs devDependencies by default regardless.
+      // (Cast needed: Next.js augments ProcessEnv to require NODE_ENV.)
       env: {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
         CI: "true",
         NEXT_TELEMETRY_DISABLED: "1",
-      },
+      } as unknown as NodeJS.ProcessEnv,
       shell: false,
     });
 

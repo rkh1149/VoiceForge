@@ -84,7 +84,12 @@ export async function GET(
           finishedAt: latestRun.finishedAt,
         }
       : null,
-    testResults: results.map(({ details: _details, ...rest }) => rest),
+    testResults: results.map((r) => ({
+      suite: r.suite,
+      status: r.status,
+      summary: r.summary,
+      createdAt: r.createdAt,
+    })),
     failedOutput,
   });
 }
