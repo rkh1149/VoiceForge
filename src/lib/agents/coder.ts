@@ -14,7 +14,8 @@ const CODER_MODEL = process.env.OPENAI_CODER_MODEL ?? "gpt-5.4";
 const SHARED_RULES = `Rules for all files you write:
 - This is a Next.js 15 App Router project with TypeScript (strict) and Tailwind CSS 4. React 19.
 - You may ONLY write files under src/app/, src/components/, and src/lib/, with .ts or .tsx extensions, via the write_file tool. package.json, configs, and src/app/globals.css are locked — the project's dependencies CANNOT be changed, so import only: react, next (next/link, next/image, next/navigation), and files you write yourself.
-- The app must work entirely in the browser: no databases, no API keys, no external services. If data must persist, use localStorage inside client components ("use client") with a typed wrapper in src/lib/storage.ts.
+- The app must work entirely in the browser: no databases, no API keys, no external services (the ONLY exception is the locked /api/ai endpoint described below when the spec includes AI features). If data must persist, use localStorage inside client components ("use client") with a typed wrapper in src/lib/storage.ts.
+- src/app/api/ai/route.ts is a LOCKED platform file — never modify, overwrite, or reimplement it, and never create any other file under src/app/api/.
 - CRITICAL: every page is prerendered on the server at build time, where window/localStorage do not exist. Never touch window or localStorage at module scope, in useState initializers, or during render — ONLY inside useEffect. Initialize state to defaults, then load saved data in a useEffect after mount.
 - Do not create pages/, src/pages/, 404.tsx, 500.tsx, _document, or _app files — this is App Router only (use not-found.tsx / error.tsx if genuinely needed).
 - NEVER reference static asset files (mp3, images, fonts, videos) — you cannot create them, so any such path will 404. For sound, synthesize it with the Web Audio API. For graphics, use inline SVG, CSS, or emoji. For images the user mentions, build an upload feature (stored in localStorage as data URLs) instead of assuming files exist.
@@ -50,6 +51,20 @@ function makeWriteFileTool(files: FileMap, log: string[]) {
   });
 }
 
+/** Extra guidance injected only when the spec includes AI features. */
+export function aiUsageNote(spec: AppSpec): string {
+  if (spec.aiFeatures.length === 0) return "";
+  return `
+
+THIS APP HAS AI FEATURES. Use the locked platform endpoint for ALL of them:
+- POST /api/ai with JSON {prompt: string, system?: string} → responds {text: string}, or {error: string} with status 400/429/502/503.
+- Call it with fetch from client components; always show a loading state while waiting.
+- If the response is not ok, display the error message to the user politely (a daily AI limit exists — 429 means "come back tomorrow").
+- Keep prompts under 4000 characters. Craft a good "system" string so answers fit this app's purpose and audience.
+- NEVER call OpenAI or any external AI service directly, never reference API keys, and never modify src/app/api/ai/route.ts.
+- In tests, mock global.fetch for /api/ai calls — never let tests hit the network.`;
+}
+
 export type CodegenResult = {
   files: FileMap; // newly written files only
   notes: string;
@@ -69,7 +84,7 @@ ${SHARED_RULES}`,
     tools: [makeWriteFileTool(files, log)],
   });
 
-  const specMessage = `Build this app:\n\n${JSON.stringify(spec, null, 2)}\n\nStart by writing src/app/page.tsx (replace the placeholder), then all components, lib files, and tests. Cover every screen and feature in the specification.`;
+  const specMessage = `Build this app:\n\n${JSON.stringify(spec, null, 2)}\n\nStart by writing src/app/page.tsx (replace the placeholder), then all components, lib files, and tests. Cover every screen and feature in the specification.${aiUsageNote(spec)}`;
 
   const result = await run(agent, [user(specMessage)], { maxTurns: 40 });
 
@@ -111,7 +126,7 @@ ${JSON.stringify(input.spec, null, 2)}
 THE APP'S CURRENT SOURCE FILES:
 ${fileList}
 
-Apply the change.`;
+Apply the change.${aiUsageNote(input.spec)}`;
 
   const result = await run(agent, [user(message)], { maxTurns: 40 });
 

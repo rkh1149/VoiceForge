@@ -136,6 +136,9 @@ export const apps = pgTable(
     vercelProjectId: text("vercel_project_id"),
     previewUrl: text("preview_url"),
     productionUrl: text("production_url"),
+    // AI-enabled generated apps (Stage 7)
+    aiToken: text("ai_token"), // secret the app uses to report/gate AI usage
+    aiDailyRequestLimit: integer("ai_daily_request_limit").notNull().default(50),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -301,6 +304,24 @@ export const changeRequests = pgTable(
   (t) => [index("change_requests_app_idx").on(t.appId)],
 );
 
+/** One row per AI request made by a generated app (gate + usage report). */
+export const aiUsage = pgTable(
+  "ai_usage",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    appId: uuid("app_id")
+      .notNull()
+      .references(() => apps.id),
+    model: text("model"),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("ai_usage_app_created_idx").on(t.appId, t.createdAt)],
+);
+
 /** Every tool call, credential use, repo change, and deployment. */
 export const auditLogs = pgTable(
   "audit_logs",
@@ -336,3 +357,4 @@ export type Deployment = typeof deployments.$inferSelect;
 export type TestResult = typeof testResults.$inferSelect;
 export type ChangeRequest = typeof changeRequests.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type AiUsage = typeof aiUsage.$inferSelect;

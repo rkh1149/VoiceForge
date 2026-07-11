@@ -1,10 +1,13 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-// Everything under /dashboard and /api (except webhooks) requires sign-in.
+// Everything under /dashboard and /api requires sign-in, except the
+// server-to-server AI usage endpoint (generated apps authenticate with
+// their own per-app token inside the route).
 const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/api(.*)"]);
+const isPublicApi = createRouteMatcher(["/api/ai-usage"]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) {
+  if (isProtectedRoute(req) && !isPublicApi(req)) {
     await auth.protect();
   }
 });

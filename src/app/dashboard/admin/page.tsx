@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { and, count, desc, eq, gte } from "drizzle-orm";
+import { and, count, desc, eq, gte, max, sum } from "drizzle-orm";
 import { getDb } from "@/db";
-import { apps, auditLogs, buildRuns, users } from "@/db/schema";
+import { aiUsage, apps, auditLogs, buildRuns, users } from "@/db/schema";
 import { getOrCreateCurrentUser } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +31,7 @@ export default async function AdminPage() {
     allApps,
     recentRuns,
     recentAudit,
+    aiByApp,
   ] = await Promise.all([
     db.select({ userCount: count() }).from(users),
     db.select({ appCount: count() }).from(apps),
@@ -75,6 +76,21 @@ export default async function AdminPage() {
       .from(auditLogs)
       .orderBy(desc(auditLogs.createdAt))
       .limit(50),
+    db
+      .select({
+        appId: apps.id,
+        appName: apps.name,
+        ownerEmail: users.email,
+        requests: count(),
+        inputTokens: sum(aiUsage.inputTokens),
+        outputTokens: sum(aiUsage.outputTokens),
+        lastUsed: max(aiUsage.createdAt),
+      })
+      .from(aiUsage)
+      .innerJoin(apps, eq(aiUsage.appId, apps.id))
+      .innerJoin(users, eq(apps.ownerId, users.id))
+      .groupBy(apps.id, apps.name, users.email)
+      .orderBy(desc(count())),
   ]);
 
   const stats = [
@@ -148,6 +164,58 @@ export default async function AdminPage() {
           </tbody>
         </table>
       </div>
+
+      {/* AI usage by app */}
+      <h2 className="mt-8 text-lg font-semibold text-forge-900">
+        AI usage by app (cumulative)
+      </h2>
+      {aiByApp.length === 0 ? (
+        <p className="mt-2 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-400">
+          No AI-enabled apps have made requests yet.
+        </p>
+      ) : (
+        <div className="mt-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-slate-100 text-xs text-slate-400">
+              <tr>
+                <th className="px-4 py-2">App</th>
+                <th className="px-4 py-2">Owner</th>
+                <th className="px-4 py-2 text-right">Requests</th>
+                <th className="px-4 py-2 text-right">Tokens in</th>
+                <th className="px-4 py-2 text-right">Tokens out</th>
+                <th className="px-4 py-2">Last used</th>
+              </tr>
+            </thead>
+            <tbody>
+              {aiByApp.map((a) => (
+                <tr key={a.appId} className="border-b border-slate-50">
+                  <td className="px-4 py-2">
+                    <Link
+                      href={`/dashboard/apps/${a.appId}`}
+                      className="font-medium text-forge-700 hover:underline"
+                    >
+                      {a.appName}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2 text-slate-500">{a.ownerEmail}</td>
+                  <td className="px-4 py-2 text-right">{a.requests}</td>
+                  <td className="px-4 py-2 text-right">
+                    {Number(a.inputTokens ?? 0).toLocaleString("en-CA")}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    {Number(a.outputTokens ?? 0).toLocaleString("en-CA")}
+                  </td>
+                  <td className="px-4 py-2 text-xs text-slate-400">
+                    {a.lastUsed
+                      ? new Date(a.lastUsed).toISOString().replace("T", " ").slice(0, 16)
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Recent builds */}
       <h2 className="mt-8 text-lg font-semibold text-forge-900">

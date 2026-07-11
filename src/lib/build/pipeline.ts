@@ -21,7 +21,12 @@ import {
   commitFiles,
   getRepoSrcFiles,
 } from "@/lib/github";
-import { ensureProject, createDeployment } from "@/lib/vercel";
+import {
+  ensureProject,
+  createDeployment,
+  setProjectEnvVars,
+} from "@/lib/vercel";
+import { randomBytes } from "crypto";
 import { loadTemplate, type FileMap } from "./template";
 import { createRunner, type Runner, type StepName } from "./runner";
 
@@ -312,6 +317,38 @@ export async function startBuildPipeline(buildRunId: string): Promise<void> {
       .update(apps)
       .set({ vercelProjectId: project.id, updatedAt: new Date() })
       .where(eq(apps.id, app.id));
+
+    // AI-enabled apps: provision server-side env vars on the app's own
+    // Vercel project. The key never appears in the generated code.
+    if (spec.aiFeatures.length > 0) {
+      let aiToken = app.aiToken;
+      if (!aiToken) {
+        aiToken = randomBytes(24).toString("hex");
+        await db
+          .update(apps)
+          .set({ aiToken, updatedAt: new Date() })
+          .where(eq(apps.id, app.id));
+      }
+      const publicUrl = process.env.VOICEFORGE_PUBLIC_URL;
+      await setProjectEnvVars({
+        projectId: project.id,
+        vars: {
+          OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
+          AI_MODEL: process.env.OPENAI_GENAPP_MODEL ?? "gpt-5.4-mini",
+          VOICEFORGE_APP_TOKEN: aiToken,
+          ...(publicUrl ? { VOICEFORGE_PUBLIC_URL: publicUrl } : {}),
+        },
+        userId: app.ownerId,
+        appId: app.id,
+      });
+      await log(
+        buildRunId,
+        `AI features enabled (daily limit: ${app.aiDailyRequestLimit} requests).` +
+          (publicUrl
+            ? ""
+            : " Warning: VOICEFORGE_PUBLIC_URL is not set, so the daily limit and usage tracking are INACTIVE for this app."),
+      );
+    }
 
     const deployment = await createDeployment({
       projectName: repoName,

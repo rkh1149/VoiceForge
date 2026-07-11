@@ -13,6 +13,7 @@ const WRITABLE_PREFIXES = ["src/app/", "src/components/", "src/lib/"];
 const PROTECTED_FILES = new Set([
   "src/app/globals.css",
   "src/lib/template.test.ts",
+  "src/app/api/ai/route.ts", // locked AI endpoint (Stage 7)
 ]);
 
 const ALLOWED_EXTENSIONS = new Set([".ts", ".tsx"]);

@@ -83,6 +83,43 @@ export async function ensureProject(opts: {
   return created.data;
 }
 
+/** Upsert environment variables on a project (production + preview). */
+export async function setProjectEnvVars(opts: {
+  projectId: string;
+  vars: Record<string, string>;
+  userId?: string;
+  appId?: string;
+}): Promise<void> {
+  const payload = Object.entries(opts.vars).map(([key, value]) => ({
+    key,
+    value,
+    type: "encrypted",
+    target: ["production", "preview"],
+  }));
+  const res = await fetch(
+    `${API}/v10/projects/${opts.projectId}/env?upsert=true${teamQuery() ? "&" + teamQuery().slice(1) : ""}`,
+    {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new Error(
+      `Setting project env vars failed (${res.status}): ${data.error?.message ?? "unknown error"}`,
+    );
+  }
+  await audit({
+    userId: opts.userId,
+    appId: opts.appId,
+    action: "vercel.envVarsSet",
+    payload: { projectId: opts.projectId, keys: Object.keys(opts.vars) }, // keys only — never values
+  });
+}
+
 /** Delete a project (404 counts as already gone). */
 export async function deleteProject(name: string): Promise<void> {
   const res = await fetch(
