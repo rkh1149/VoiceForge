@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { apps } from "@/db/schema";
 import { getOrCreateCurrentUser } from "@/lib/users";
 import BuildStatus from "@/components/BuildStatus";
+import DeleteAppButton from "@/components/DeleteAppButton";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,9 @@ export default async function AppDetailPage({
         <p className="mt-1 mb-6 text-sm text-slate-500">{app.description}</p>
       )}
       <BuildStatus appId={app.id} />
+      {app.ownerId === user.id && (
+        <DeleteAppButton appId={app.id} appName={app.name} />
+      )}
     </div>
   );
 }

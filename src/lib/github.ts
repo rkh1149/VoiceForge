@@ -80,6 +80,24 @@ export async function createRepoIfMissing(opts: {
   };
 }
 
+/** Delete a repo (404 counts as already gone). */
+export async function deleteRepo(name: string): Promise<void> {
+  const octokit = getOctokit();
+  const owner = getOwner();
+  try {
+    await octokit.repos.delete({ owner, repo: name });
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    if (status === 404) return;
+    if (status === 403) {
+      throw new Error(
+        "GitHub refused to delete the repo — your fine-grained token needs 'Administration: Read and write' permission.",
+      );
+    }
+    throw err;
+  }
+}
+
 /**
  * Fetch the current src/ files of an app repo (change-mode starting point).
  * Only src/**&#47;*.ts(x) matter: configs and package.json always come fresh

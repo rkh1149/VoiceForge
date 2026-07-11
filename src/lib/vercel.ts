@@ -83,6 +83,22 @@ export async function ensureProject(opts: {
   return created.data;
 }
 
+/** Delete a project (404 counts as already gone). */
+export async function deleteProject(name: string): Promise<void> {
+  const res = await fetch(
+    `${API}/v9/projects/${encodeURIComponent(name)}${teamQuery()}`,
+    { method: "DELETE", headers: authHeaders() },
+  );
+  if (!res.ok && res.status !== 404) {
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new Error(
+      `Vercel project deletion failed (${res.status}): ${data.error?.message ?? "unknown error"}`,
+    );
+  }
+}
+
 export type DeploymentInfo = {
   id: string;
   url: string; // hostname without protocol
