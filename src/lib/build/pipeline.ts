@@ -3,14 +3,24 @@ import { getDb } from "@/db";
 import {
   apps,
   buildRuns,
+  changeRequests,
   deployments,
   requirements,
   testResults,
 } from "@/db/schema";
 import type { AppSpec } from "@/lib/spec";
 import { audit } from "@/lib/audit";
-import { runCodeAgent, runDebugAgent } from "@/lib/agents/coder";
-import { createRepoIfMissing, createBranch, commitFiles } from "@/lib/github";
+import {
+  runCodeAgent,
+  runChangeCodeAgent,
+  runDebugAgent,
+} from "@/lib/agents/coder";
+import {
+  createRepoIfMissing,
+  createBranch,
+  commitFiles,
+  getRepoSrcFiles,
+} from "@/lib/github";
 import {
   ensureProject,
   createDeployment,
@@ -133,7 +143,17 @@ export async function startBuildPipeline(buildRunId: string): Promise<void> {
       payload: { requirementVersion: requirement.version },
     });
 
-    // 1. Assemble files: locked template + generated code.
+    // Change mode: the app was built before, so modify its current code.
+    const changeMode = Boolean(app.githubRepoUrl && requirement.version > 1);
+    const [changeRequest] = changeMode
+      ? await db
+          .select()
+          .from(changeRequests)
+          .where(eq(changeRequests.requirementId, requirement.id))
+          .limit(1)
+      : [];
+
+    // 1. Assemble files: locked (always-fresh) template + app code.
     await log(buildRunId, "Loading app template…");
     const files = await loadTemplate({
       slug: app.slug,
@@ -141,8 +161,37 @@ export async function startBuildPipeline(buildRunId: string): Promise<void> {
       purpose: spec.purpose,
     });
 
-    await log(buildRunId, `Generating code for "${app.name}"…`);
-    const generated = await runCodeAgent(spec);
+    let generated;
+    if (changeMode) {
+      await log(buildRunId, "Fetching the app's current code from GitHub…");
+      const repoName = `voiceforge-${app.slug}`;
+      const repo = await createRepoIfMissing({
+        name: repoName,
+        description: app.description ?? app.name,
+        userId: app.ownerId,
+        appId: app.id,
+      });
+      const currentSrc = await getRepoSrcFiles({
+        repo: repo.repo,
+        branch: repo.defaultBranch,
+      });
+      // Current app code replaces template placeholders; configs stay fresh.
+      Object.assign(files, currentSrc);
+
+      await log(
+        buildRunId,
+        `Applying change: ${changeRequest?.description ?? "updated specification"}`,
+      );
+      generated = await runChangeCodeAgent({
+        spec,
+        changeSummary:
+          changeRequest?.description ?? "Apply the updated specification.",
+        currentFiles: currentSrc,
+      });
+    } else {
+      await log(buildRunId, `Generating code for "${app.name}"…`);
+      generated = await runCodeAgent(spec);
+    }
     Object.assign(files, generated.files);
     await log(
       buildRunId,
@@ -316,12 +365,18 @@ export async function startBuildPipeline(buildRunId: string): Promise<void> {
       .set({ previewUrl, status: "testing", updatedAt: new Date() })
       .where(eq(apps.id, app.id));
     await setStatus(buildRunId, "awaiting_user_test");
+    if (changeRequest) {
+      await db
+        .update(changeRequests)
+        .set({ status: "complete", updatedAt: new Date() })
+        .where(eq(changeRequests.id, changeRequest.id));
+    }
     await audit({
       userId: app.ownerId,
       appId: app.id,
       buildRunId,
       action: "build.previewReady",
-      payload: { commitSha, previewUrl, branch },
+      payload: { commitSha, previewUrl, branch, changeMode },
     });
     await log(
       buildRunId,
@@ -334,10 +389,20 @@ export async function startBuildPipeline(buildRunId: string): Promise<void> {
       errorMessage: message,
       finishedAt: new Date(),
     });
+    // A failed change build must not mark a live app as failed.
     await db
       .update(apps)
-      .set({ status: "failed", updatedAt: new Date() })
+      .set({
+        status: app.productionUrl ? "deployed" : "failed",
+        updatedAt: new Date(),
+      })
       .where(eq(apps.id, app.id));
+    if (run.requirementId) {
+      await db
+        .update(changeRequests)
+        .set({ status: "failed", updatedAt: new Date() })
+        .where(eq(changeRequests.requirementId, run.requirementId));
+    }
     await audit({
       userId: app.ownerId,
       appId: app.id,

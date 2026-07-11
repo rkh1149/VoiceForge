@@ -13,7 +13,14 @@ type Proposal = {
   version: number;
 };
 
-export default function PlannerChat() {
+export default function PlannerChat({
+  appId,
+  appName,
+}: {
+  /** When set, this chat plans a CHANGE to an existing app. */
+  appId?: string;
+  appName?: string;
+} = {}) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -40,7 +47,7 @@ export default function PlannerChat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, message }),
+        body: JSON.stringify({ conversationId, message, appId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Something went wrong.");
@@ -87,8 +94,9 @@ export default function PlannerChat() {
       <div className="max-h-[55vh] min-h-48 overflow-y-auto p-4">
         {messages.length === 0 && (
           <p className="py-8 text-center text-sm text-slate-400">
-            Describe the app you want, e.g. “Build me an app for tracking
-            family recipes.”
+            {appId
+              ? `Describe the change you want to ${appName ?? "this app"}, e.g. “Add a reset button for the scores.”`
+              : "Describe the app you want, e.g. “Build me an app for tracking family recipes.”"}
           </p>
         )}
         <div className="space-y-3">
@@ -123,8 +131,10 @@ export default function PlannerChat() {
       {proposal && decision !== "approved" && (
         <div className="border-t border-slate-200 bg-forge-50 p-4">
           <p className="text-sm font-semibold text-forge-900">
-            Build plan ready: {proposal.appName}
-            {proposal.version > 1 ? ` (revision ${proposal.version})` : ""}
+            {appId ? "Change plan ready" : "Build plan ready"}: {proposal.appName}
+            {!appId && proposal.version > 1
+              ? ` (revision ${proposal.version})`
+              : ""}
           </p>
           <p className="mt-1 text-xs text-slate-500">
             Read the plan above. Approve it to queue the build, or keep
@@ -136,7 +146,7 @@ export default function PlannerChat() {
               disabled={busy}
               className="rounded-xl bg-green-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
             >
-              ✓ Approve — build this app
+              {appId ? "✓ Approve — make this change" : "✓ Approve — build this app"}
             </button>
             <button
               onClick={() => decide("rejected")}

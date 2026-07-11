@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { approvals, apps, buildRuns } from "@/db/schema";
+import { approvals, apps, buildRuns, changeRequests } from "@/db/schema";
 import { getOrCreateCurrentUser } from "@/lib/users";
 import { audit } from "@/lib/audit";
 import { startBuildPipeline } from "@/lib/build/pipeline";
@@ -57,11 +57,22 @@ export async function POST(
 
   let buildRunId: string | null = null;
 
-  if (decision === "approved" && approval.type === "build") {
-    await db
-      .update(apps)
-      .set({ status: "spec_approved", updatedAt: new Date() })
-      .where(eq(apps.id, approval.appId));
+  if (
+    decision === "approved" &&
+    (approval.type === "build" || approval.type === "change")
+  ) {
+    if (approval.type === "build") {
+      await db
+        .update(apps)
+        .set({ status: "spec_approved", updatedAt: new Date() })
+        .where(eq(apps.id, approval.appId));
+    }
+    if (approval.type === "change" && approval.requirementId) {
+      await db
+        .update(changeRequests)
+        .set({ status: "building", updatedAt: new Date() })
+        .where(eq(changeRequests.requirementId, approval.requirementId));
+    }
 
     // Queue the build unless one is already active for this app.
     const active = await db
@@ -97,6 +108,17 @@ export async function POST(
         console.error(`Build pipeline crashed for ${run.id}:`, err),
       );
     }
+  }
+
+  if (
+    decision === "rejected" &&
+    approval.type === "change" &&
+    approval.requirementId
+  ) {
+    await db
+      .update(changeRequests)
+      .set({ status: "rejected", updatedAt: new Date() })
+      .where(eq(changeRequests.requirementId, approval.requirementId));
   }
 
   await audit({

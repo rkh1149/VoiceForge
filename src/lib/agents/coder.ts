@@ -78,6 +78,48 @@ ${SHARED_RULES}`,
   };
 }
 
+/** Change mode: modify an existing app's source instead of regenerating. */
+export async function runChangeCodeAgent(input: {
+  spec: AppSpec; // the UPDATED spec
+  changeSummary: string;
+  currentFiles: FileMap; // current src/ files from the live app
+}): Promise<CodegenResult> {
+  const files: FileMap = {};
+  const log: string[] = [];
+
+  const agent = new Agent({
+    name: "VoiceForge Change Agent",
+    model: CODER_MODEL,
+    instructions: `You are an expert Next.js developer modifying an EXISTING app. Apply the requested change by rewriting only the files that need to differ (always complete file content, via write_file) and adding any new files/tests the change needs. Preserve everything else about the app: its look, behavior, and saved-data format (users must not lose data stored in localStorage — migrate the stored shape in the storage helper if the change requires it). Update or add tests to cover the change. When finished, reply with a short summary of what you changed.
+
+${SHARED_RULES}`,
+    tools: [makeWriteFileTool(files, log)],
+  });
+
+  const fileList = Object.entries(input.currentFiles)
+    .map(([p, c]) => `===== ${p} =====\n${c}`)
+    .join("\n\n");
+
+  const message = `THE REQUESTED CHANGE:
+${input.changeSummary}
+
+THE UPDATED FULL SPECIFICATION:
+${JSON.stringify(input.spec, null, 2)}
+
+THE APP'S CURRENT SOURCE FILES:
+${fileList}
+
+Apply the change.`;
+
+  const result = await run(agent, [user(message)], { maxTurns: 40 });
+
+  return {
+    files,
+    notes: extractText(result.output),
+    filesWritten: log,
+  };
+}
+
 export type DebugResult = {
   files: FileMap; // changed files only
   notes: string;

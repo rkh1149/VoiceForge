@@ -6,12 +6,14 @@ import { getDb } from "@/db";
 import {
   apps,
   approvals,
+  changeRequests,
   conversations,
   requirements,
 } from "@/db/schema";
 import { getOrCreateCurrentUser } from "@/lib/users";
 import { audit } from "@/lib/audit";
-import { runPlanner } from "@/lib/agents/planner";
+import { runPlanner, runChangePlanner } from "@/lib/agents/planner";
+import type { AppSpec } from "@/lib/spec";
 import { uniqueSlugForOwner } from "@/lib/slug";
 
 // Planning turns can take a while (model + tool call).
@@ -19,6 +21,8 @@ export const maxDuration = 60;
 
 const bodySchema = z.object({
   conversationId: z.string().uuid().nullish(),
+  // Present when the user is changing an existing app (change flow).
+  appId: z.string().uuid().nullish(),
   message: z.string().min(1).max(2000),
 });
 
@@ -40,9 +44,21 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
-  const { conversationId, message } = parsed.data;
+  const { conversationId, appId: requestedAppId, message } = parsed.data;
 
   const db = getDb();
+
+  // Change flow: verify the target app belongs to this user.
+  if (requestedAppId) {
+    const owned = await db
+      .select({ id: apps.id })
+      .from(apps)
+      .where(and(eq(apps.id, requestedAppId), eq(apps.ownerId, user.id)))
+      .limit(1);
+    if (owned.length === 0) {
+      return NextResponse.json({ error: "App not found" }, { status: 404 });
+    }
+  }
 
   // Load or create the conversation (must belong to this user).
   let convo;
@@ -67,13 +83,19 @@ export async function POST(req: Request) {
   } else {
     const rows = await db
       .insert(conversations)
-      .values({ userId: user.id, channel: "text", transcript: [] })
+      .values({
+        userId: user.id,
+        appId: requestedAppId ?? null,
+        channel: "text",
+        transcript: [],
+      })
       .returning();
     convo = rows[0];
     await audit({
       userId: user.id,
+      appId: requestedAppId ?? undefined,
       action: "conversation.started",
-      payload: { conversationId: convo.id },
+      payload: { conversationId: convo.id, mode: requestedAppId ? "change" : "create" },
     });
   }
 
@@ -88,9 +110,44 @@ export async function POST(req: Request) {
     );
   }
 
+  // Change mode when the conversation targets an app that has been built.
+  let changeMode = false;
+  let currentSpec: AppSpec | null = null;
+  if (convo.appId) {
+    const [targetApp] = await db
+      .select()
+      .from(apps)
+      .where(eq(apps.id, convo.appId))
+      .limit(1);
+    if (targetApp?.githubRepoUrl) {
+      const [latest] = await db
+        .select()
+        .from(requirements)
+        .where(eq(requirements.appId, convo.appId))
+        .orderBy(desc(requirements.version))
+        .limit(1);
+      if (latest) {
+        changeMode = true;
+        currentSpec = latest.spec as AppSpec;
+      }
+    }
+  }
+
   let result;
+  let changeSummary: string | null = null;
   try {
-    result = await runPlanner(history, message);
+    if (changeMode && currentSpec) {
+      const changeResult = await runChangePlanner(history, message, currentSpec);
+      if (changeResult.proposal) {
+        const { changeSummary: summary, ...spec } = changeResult.proposal;
+        changeSummary = summary;
+        result = { ...changeResult, proposal: spec as AppSpec };
+      } else {
+        result = { ...changeResult, proposal: null };
+      }
+    } else {
+      result = await runPlanner(history, message);
+    }
   } catch (err) {
     console.error("Planner run failed:", err);
     return NextResponse.json(
@@ -156,14 +213,14 @@ export async function POST(req: Request) {
         .where(eq(conversations.id, convo.id));
     }
 
-    // Supersede any earlier pending build approval for this app.
+    // Supersede any earlier pending build/change approval for this app.
     await db
       .update(approvals)
       .set({ status: "rejected", decidedAt: new Date() })
       .where(
         and(
           eq(approvals.appId, appId),
-          eq(approvals.type, "build"),
+          eq(approvals.type, changeMode ? "change" : "build"),
           eq(approvals.status, "pending"),
         ),
       );
@@ -185,15 +242,25 @@ export async function POST(req: Request) {
         appId,
         requirementId: requirement.id,
         userId: user.id,
-        type: "build",
+        type: changeMode ? "change" : "build",
         status: "pending",
       })
       .returning();
 
+    if (changeMode && changeSummary) {
+      await db.insert(changeRequests).values({
+        appId,
+        userId: user.id,
+        description: changeSummary,
+        status: "awaiting_approval",
+        requirementId: requirement.id,
+      });
+    }
+
     await audit({
       userId: user.id,
       appId,
-      action: "spec.proposed",
+      action: changeMode ? "change.proposed" : "spec.proposed",
       payload: { requirementId: requirement.id, version, appName: spec.appName },
     });
 

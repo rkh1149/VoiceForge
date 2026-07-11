@@ -1,5 +1,10 @@
 import { Agent, run, tool, user, type AgentInputItem } from "@openai/agents";
-import { appSpecSchema, type AppSpec } from "@/lib/spec";
+import {
+  appSpecSchema,
+  changeProposalSchema,
+  type AppSpec,
+  type ChangeProposal,
+} from "@/lib/spec";
 
 /**
  * Planning conversation agent (Stage 1).
@@ -55,6 +60,68 @@ export async function runPlanner(
     model: PLANNER_MODEL,
     instructions: PLANNER_INSTRUCTIONS,
     tools: [proposeSpec],
+  });
+
+  const input: AgentInputItem[] = [...history, user(userMessage)];
+  const result = await run(agent, input, { maxTurns: 6 });
+
+  return {
+    reply: extractReply(result.output) || fallbackReply(result.finalOutput),
+    history: result.history,
+    proposal,
+  };
+}
+
+export type ChangePlannerResult = {
+  reply: string;
+  history: AgentInputItem[];
+  proposal: ChangeProposal | null;
+};
+
+const CHANGE_INSTRUCTIONS_TEMPLATE = `You are VoiceForge, helping a non-technical person change an app they already built with you. Never assume technical knowledge.
+
+The app's CURRENT specification is:
+__CURRENT_SPEC__
+
+Your job:
+1. Understand what they want changed (their first message describes it).
+2. Ask a few short clarifying questions in everyday language — at most TWO per message, around 1-3 rounds total. Only ask about the change; don't re-plan the whole app.
+3. When you understand the change, call the propose_change tool exactly once with the COMPLETE UPDATED specification (the current spec with the change applied — keep everything else as it is) plus a changeSummary describing what's different.
+4. After the tool succeeds, summarize in plain English: what will change, what stays the same, and any new things that will be saved or tested. End by telling them to press the Approve button, or to tell you what to adjust.
+
+Rules:
+- Never discuss code or technical details.
+- Keep the app's name unless the user asks to change it.
+- If the user asks for something unsafe or that handles other people's money or medical decisions, politely decline and suggest a safer alternative.
+- If they want adjustments after proposing, discuss and call propose_change again with the revised spec.
+- Keep every reply short and warm.`;
+
+export async function runChangePlanner(
+  history: AgentInputItem[],
+  userMessage: string,
+  currentSpec: AppSpec,
+): Promise<ChangePlannerResult> {
+  let proposal: ChangeProposal | null = null;
+
+  const proposeChange = tool({
+    name: "propose_change",
+    description:
+      "Record the complete updated app specification plus a plain-language summary of the change. Call exactly once, after the user has answered your clarifying questions.",
+    parameters: changeProposalSchema,
+    execute: async (change: ChangeProposal) => {
+      proposal = change;
+      return "Change recorded. Now summarize what will change for the user and ask them to press the Approve button.";
+    },
+  });
+
+  const agent = new Agent({
+    name: "VoiceForge Change Planner",
+    model: PLANNER_MODEL,
+    instructions: CHANGE_INSTRUCTIONS_TEMPLATE.replace(
+      "__CURRENT_SPEC__",
+      JSON.stringify(currentSpec, null, 2),
+    ),
+    tools: [proposeChange],
   });
 
   const input: AgentInputItem[] = [...history, user(userMessage)];

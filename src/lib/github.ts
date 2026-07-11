@@ -80,6 +80,57 @@ export async function createRepoIfMissing(opts: {
   };
 }
 
+/**
+ * Fetch the current src/ files of an app repo (change-mode starting point).
+ * Only src/**&#47;*.ts(x) matter: configs and package.json always come fresh
+ * from the template, and agents may only write under src/ anyway.
+ */
+export async function getRepoSrcFiles(opts: {
+  repo: string;
+  branch: string;
+}): Promise<FileMap> {
+  const octokit = getOctokit();
+  const owner = getOwner();
+
+  const ref = await octokit.git.getRef({
+    owner,
+    repo: opts.repo,
+    ref: `heads/${opts.branch}`,
+  });
+  const commit = await octokit.git.getCommit({
+    owner,
+    repo: opts.repo,
+    commit_sha: ref.data.object.sha,
+  });
+  const tree = await octokit.git.getTree({
+    owner,
+    repo: opts.repo,
+    tree_sha: commit.data.tree.sha,
+    recursive: "1",
+  });
+
+  const files: FileMap = {};
+  for (const entry of tree.data.tree) {
+    if (
+      entry.type !== "blob" ||
+      !entry.path?.startsWith("src/") ||
+      !entry.sha ||
+      !/\.(ts|tsx|css)$/.test(entry.path)
+    ) {
+      continue;
+    }
+    const blob = await octokit.git.getBlob({
+      owner,
+      repo: opts.repo,
+      file_sha: entry.sha,
+    });
+    files[entry.path] = Buffer.from(blob.data.content, "base64").toString(
+      "utf8",
+    );
+  }
+  return files;
+}
+
 /** Create a branch pointing at the current head of the default branch. */
 export async function createBranch(opts: {
   repo: string;

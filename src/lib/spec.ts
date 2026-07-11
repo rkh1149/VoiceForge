@@ -50,3 +50,14 @@ export const appSpecSchema = z.object({
 });
 
 export type AppSpec = z.infer<typeof appSpecSchema>;
+
+/** Change proposals carry the full UPDATED spec plus a summary of the change. */
+export const changeProposalSchema = appSpecSchema.extend({
+  changeSummary: z
+    .string()
+    .describe(
+      "Plain-language summary of what is changing versus the current app, e.g. 'Add a print button to each recipe'",
+    ),
+});
+
+export type ChangeProposal = z.infer<typeof changeProposalSchema>;

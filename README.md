@@ -2,7 +2,7 @@
 
 A voice-controlled app builder for family and friends. Describe an app in plain language; VoiceForge plans it with you, builds it, tests it, and deploys it.
 
-Current progress: **Stage 3** — the full idea-to-live-app loop works: approve a plan and the pipeline generates the code, tests it (with a Debug Agent fixing failures), pushes it to a build branch on GitHub, deploys a **preview** to Vercel, and smoke-tests it. You try the preview, press **Publish**, and VoiceForge merges to main and deploys to a permanent production URL. Production never happens without that second approval.
+Current progress: **Stage 4** — the full loop works for both new apps and changes. Create: describe an idea → approve the plan → pipeline generates, tests, previews → you Publish → live URL. Change: pick a built app on the Change page, describe the change → approve → the Change Agent modifies the app's *current* code (fetched from GitHub, preserving saved user data) → full re-test → new preview → Publish. Every spec is versioned in `requirements`; every change is tracked in `change_requests`; production always requires your explicit approval.
 
 ## How builds work (Stage 2)
 
