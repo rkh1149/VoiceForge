@@ -104,6 +104,17 @@ function srcOnly(files: FileMap): FileMap {
 export async function startBuildPipeline(buildRunId: string): Promise<void> {
   const db = getDb();
 
+  // Serverless functions can't run npm or long jobs. Until the pipeline
+  // moves to Vercel Sandbox (planned), builds run from the local server.
+  if (process.env.VERCEL) {
+    await setStatus(buildRunId, "failed", {
+      errorMessage:
+        "Builds can't run on the hosted VoiceForge yet — ask Richard to run this build from the VoiceForge computer.",
+      finishedAt: new Date(),
+    });
+    return;
+  }
+
   const [run] = await db
     .select()
     .from(buildRuns)
