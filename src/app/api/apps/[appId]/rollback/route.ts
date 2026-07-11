@@ -5,7 +5,7 @@ import { getDb } from "@/db";
 import { apps, deployments } from "@/db/schema";
 import { getOrCreateCurrentUser } from "@/lib/users";
 import { audit } from "@/lib/audit";
-import { promoteDeployment } from "@/lib/vercel";
+import { restoreDeployment } from "@/lib/vercel";
 
 const bodySchema = z.object({
   deploymentId: z.string().uuid(), // VoiceForge deployments.id
@@ -57,7 +57,7 @@ export async function POST(
   }
 
   try {
-    await promoteDeployment({
+    await restoreDeployment({
       projectId: app.vercelProjectId,
       deploymentId: dep.vercelDeploymentId,
       userId: user.id,

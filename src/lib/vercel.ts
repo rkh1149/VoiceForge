@@ -149,14 +149,22 @@ export async function createDeployment(opts: {
   return res.data;
 }
 
-/** Which deployment does production currently point at? (null if unknown) */
+/** Which deployment does production currently point at? (null if unknown)
+ * After an instant rollback the truth lives in lastRollbackTarget, not
+ * targets.production (which keeps reporting the newest deployment). */
 export async function getCurrentProductionDeploymentId(
   projectId: string,
 ): Promise<string | null> {
   const res = await vercelFetch<{
     targets?: { production?: { id?: string } };
+    lastRollbackTarget?: { deploymentId?: string } | null;
   }>(`/v9/projects/${projectId}${teamQuery()}`);
-  return res.ok ? (res.data.targets?.production?.id ?? null) : null;
+  if (!res.ok) return null;
+  return (
+    res.data.lastRollbackTarget?.deploymentId ??
+    res.data.targets?.production?.id ??
+    null
+  );
 }
 
 /** One-shot deployment status check (null on fetch failure). */
@@ -169,32 +177,42 @@ export async function getDeployment(
   return res.ok ? res.data : null;
 }
 
-/** Point all production domains of a project at an existing deployment
- * (used for rollback; does not rebuild). */
-export async function promoteDeployment(opts: {
+/** Point production traffic at an existing deployment (no rebuild).
+ * Tries Vercel's Instant Rollback endpoint first (works in both
+ * directions, including back to the newest deployment); falls back to
+ * promote for cases rollback doesn't accept. */
+export async function restoreDeployment(opts: {
   projectId: string;
   deploymentId: string;
   userId?: string;
   appId?: string;
 }): Promise<void> {
-  const res = await fetch(
-    `${API}/v10/projects/${opts.projectId}/promote/${opts.deploymentId}${teamQuery()}`,
-    { method: "POST", headers: authHeaders() },
-  );
-  if (!res.ok) {
+  const attempts: string[] = [];
+
+  for (const path of [
+    `/v1/projects/${opts.projectId}/rollback/${opts.deploymentId}`,
+    `/v10/projects/${opts.projectId}/promote/${opts.deploymentId}`,
+  ]) {
+    const res = await fetch(`${API}${path}${teamQuery()}`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    if (res.ok) {
+      await audit({
+        userId: opts.userId,
+        appId: opts.appId,
+        action: "vercel.deploymentRestored",
+        payload: { deploymentId: opts.deploymentId, via: path.split("/")[3] },
+      });
+      return;
+    }
     const data = (await res.json().catch(() => ({}))) as {
       error?: { message?: string };
     };
-    throw new Error(
-      `Rollback failed (${res.status}): ${data.error?.message ?? "unknown error"}`,
-    );
+    attempts.push(`${res.status}: ${data.error?.message ?? "unknown error"}`);
   }
-  await audit({
-    userId: opts.userId,
-    appId: opts.appId,
-    action: "vercel.deploymentPromoted",
-    payload: { deploymentId: opts.deploymentId },
-  });
+
+  throw new Error(`Restore failed (${attempts.join(" / ")})`);
 }
 
 /** Simple smoke test: the deployed URL responds with an HTML page. */
