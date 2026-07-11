@@ -156,8 +156,21 @@ export default function BuildStatus({ appId }: { appId: string }) {
               : "No build has run yet."}
           </p>
         </div>
+        {buildRun?.status === "failed" && (
+          <p className="mt-2 text-sm text-slate-600">
+            Something went wrong while building your app — this happens
+            sometimes and it&rsquo;s not your fault. Press the button below to
+            try again. If it fails a second time, tell Richard which app you
+            were making and he&rsquo;ll take a look.
+          </p>
+        )}
         {buildRun?.errorMessage && (
-          <p className="mt-2 text-sm text-red-600">{buildRun.errorMessage}</p>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs text-slate-400">
+              Technical details
+            </summary>
+            <p className="mt-1 text-sm text-red-600">{buildRun.errorMessage}</p>
+          </details>
         )}
         {(buildRun?.status === "failed" ||
           (buildRun?.status === "complete" && !data.app.previewUrl)) && (

@@ -227,7 +227,7 @@ export default async function AdminPage() {
             <li key={r.id} className="flex items-start justify-between gap-3">
               <span>
                 <Link
-                  href={`/dashboard/apps/${r.appId}`}
+                  href={`/dashboard/apps/${r.appId}/runs/${r.id}`}
                   className="font-medium text-forge-700 hover:underline"
                 >
                   {r.appName}
