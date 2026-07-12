@@ -11,11 +11,25 @@ test("home page loads cleanly, survives clicks, and is accessible", async ({
   baseURL,
 }) => {
   const missingFiles: string[] = [];
+  const externalRequests: string[] = [];
   const pageErrors: string[] = [];
 
   page.on("response", (res) => {
     if (res.status() === 404 && baseURL && res.url().startsWith(baseURL)) {
       missingFiles.push(res.url());
+    }
+  });
+  // Generated apps must be self-contained: any request to another host is
+  // a hallucinated stock photo / CDN / placeholder service — a bug.
+  page.on("request", (req) => {
+    const url = req.url();
+    if (
+      baseURL &&
+      !url.startsWith(baseURL) &&
+      !url.startsWith("data:") &&
+      !url.startsWith("blob:")
+    ) {
+      externalRequests.push(url);
     }
   });
   page.on("pageerror", (err) => pageErrors.push(String(err)));
@@ -45,6 +59,10 @@ test("home page loads cleanly, survives clicks, and is accessible", async ({
   expect(
     missingFiles,
     `Files referenced but missing (404): ${missingFiles.join(", ")}`,
+  ).toEqual([]);
+  expect(
+    externalRequests,
+    `The app must be self-contained but requested external URLs: ${[...new Set(externalRequests)].join(", ")}`,
   ).toEqual([]);
 
   const axeResults = await new AxeBuilder({ page }).analyze();
