@@ -4,6 +4,7 @@ import { and, count, desc, eq, gte, max, sql, sum } from "drizzle-orm";
 import { getDb } from "@/db";
 import { aiUsage, apps, auditLogs, buildRuns, users } from "@/db/schema";
 import { getOrCreateCurrentUser } from "@/lib/users";
+import AiModelSyncButton from "@/components/AiModelSyncButton";
 
 export const dynamic = "force-dynamic";
 
@@ -221,6 +222,8 @@ export default async function AdminPage() {
           </table>
         </div>
       )}
+
+      <AiModelSyncButton />
 
       {/* Recent builds */}
       <h2 className="mt-8 text-lg font-semibold text-forge-900">

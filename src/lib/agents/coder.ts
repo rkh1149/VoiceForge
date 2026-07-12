@@ -9,7 +9,7 @@ import { isAgentWritablePath, type FileMap } from "@/lib/build/template";
  * the writable-path policy (src/ only, no configs, no package.json).
  */
 
-const CODER_MODEL = process.env.OPENAI_CODER_MODEL ?? "gpt-5.4";
+const CODER_MODEL = process.env.OPENAI_CODER_MODEL ?? "gpt-5.6-terra";
 
 const SHARED_RULES = `Rules for all files you write:
 - This is a Next.js 15 App Router project with TypeScript (strict) and Tailwind CSS 4. React 19.

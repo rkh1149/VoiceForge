@@ -173,17 +173,24 @@ export default function BuildStatus({ appId }: { appId: string }) {
           </details>
         )}
         {(buildRun?.status === "failed" ||
+          buildRun?.status === "awaiting_user_test" ||
           (buildRun?.status === "complete" && !data.app.previewUrl)) && (
           <button
             onClick={rebuild}
             disabled={rebuilding}
-            className="mt-3 rounded-xl bg-forge-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-forge-700 disabled:opacity-50"
+            className={
+              buildRun?.status === "awaiting_user_test"
+                ? "mt-3 rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                : "mt-3 rounded-xl bg-forge-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-forge-700 disabled:opacity-50"
+            }
           >
             {rebuilding
               ? "Restarting…"
               : buildRun?.status === "failed"
                 ? "↻ Try building again"
-                : "↻ Rebuild & deploy"}
+                : buildRun?.status === "awaiting_user_test"
+                  ? "↻ Rebuild from scratch"
+                  : "↻ Rebuild & deploy"}
           </button>
         )}
         {data.app.githubRepoUrl && (

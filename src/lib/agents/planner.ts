@@ -14,7 +14,7 @@ import {
  * the model, by a real button and a database row.
  */
 
-const PLANNER_MODEL = process.env.OPENAI_PLANNER_MODEL ?? "gpt-5.4-mini";
+const PLANNER_MODEL = process.env.OPENAI_PLANNER_MODEL ?? "gpt-5.6-terra";
 
 const PLANNER_INSTRUCTIONS = `You are VoiceForge, a friendly assistant that helps non-technical people plan an app they want built. The person you are talking to is a family member or friend of the owner — never assume technical knowledge.
 

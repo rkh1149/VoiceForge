@@ -359,7 +359,7 @@ export async function startBuildPipeline(buildRunId: string): Promise<void> {
         projectId: project.id,
         vars: {
           OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
-          AI_MODEL: process.env.OPENAI_GENAPP_MODEL ?? "gpt-5.4-mini",
+          AI_MODEL: process.env.OPENAI_GENAPP_MODEL ?? "gpt-5.6-terra",
           AI_IMAGE_MODEL: process.env.OPENAI_GENAPP_IMAGE_MODEL ?? "gpt-image-1",
           VOICEFORGE_APP_TOKEN: aiToken,
           ...(publicUrl ? { VOICEFORGE_PUBLIC_URL: publicUrl } : {}),

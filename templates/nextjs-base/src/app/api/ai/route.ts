@@ -124,7 +124,7 @@ export async function POST(req: Request) {
   }
 
   // ---- text mode -------------------------------------------------------
-  const model = process.env.AI_MODEL ?? "gpt-5.4-mini";
+  const model = process.env.AI_MODEL ?? "gpt-5.6-terra";
   const aiRes = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
